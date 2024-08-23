@@ -30,11 +30,13 @@ class MassModelOutputs:
         Steel Output Actual (kg)
         Carbon Mass Needed (kg)
         Lime Mass Needed (kg)
+        H2/DRI The Hydrogen to output DRI steel ratio (kg/kg)
 
     """
     Steel_Output_Actual:float # (kg)
     Carbon_Mass_Needed: float #(kg)
     Lime_Mass_Needed: float # (kg)
+    Plant_ratio: float # [-]
 
 def mass_model(config:MassModelConfig) -> MassModelOutputs:
     """  
@@ -62,8 +64,9 @@ def mass_model(config:MassModelConfig) -> MassModelOutputs:
     m3_actual = m2_feo_reduced + m3 #(kg) Actual steel outputted from excess iron oxidation    
     
     steel_out_actual = m3_actual #(kg)
+    Plant_ratio=hdri_m.hydrogen_gas_needed/steel_out_actual
 
-    return MassModelOutputs(Steel_Output_Actual=steel_out_actual,Carbon_Mass_Needed=carbon_total,Lime_Mass_Needed=lime_total)
+    return MassModelOutputs(Steel_Output_Actual=steel_out_actual,Carbon_Mass_Needed=carbon_total,Lime_Mass_Needed=lime_total,Plant_ratio=Plant_ratio)
 
 
 @define 
@@ -640,8 +643,8 @@ if __name__ == '__main__':
     #print(mass_outputs)
     config = MassModelConfig(steel_output_desired)
     out = mass_model(config)
-    #print()
-    #print(out)
+    print()
+    print(out)
 
     #print(energy_outputs)
     config1 = EnergyModelConfig(config)

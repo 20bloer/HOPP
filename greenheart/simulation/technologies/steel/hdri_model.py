@@ -1,4 +1,5 @@
-from attrs import define
+from attrs import define,field
+from typing import  Optional
 from greenheart.simulation.technologies.steel.enthalpy_functions import (
     h2_enthalpy,
     h2o_enthalpy,
@@ -30,8 +31,22 @@ class MassModelConfig:
         [1]: Chase, M.W., Jr. 1998. "NIST-JANAF Thermochemical Tables, Fourth Edition." J. Phys. Chem. Ref. Data, Monograph 9 1-1951. doi:https://doi.org/10.18434/T4D303.
         [2]: Midrex Technologies, Inc. 2018. "DRI Products + Applications: Providing flexibility for steelmaking." April. Accessed May 2, 2022. https://www.midrex.com/wp-content/uploads/MIdrexDRI_ProductsBrochure_4-12-18.pdf.
     """
+   
+   
+    # hydrogen_gas_needed: Optional[float] = field(default=None)
+    # steel_output_desired: Optional[float] = field(default=None)
+    
+    # def __attrs_post_init__(self):
+    #     if self.hydrogen_amount_kgpy is None and self.desired_steel_mtpy is None:
+    #         raise ValueError("`hydrogen_amount_kgpy` or `desired_steel_mtpy` is a required input.")
+
+    #     if self.hydrogen_amount_kgpy and self.desired_steel_mtpy:
+    #         raise ValueError("can only select one input: `hydrogen_amount_kgpy` or `desired_steel_mtpy`.")
+
 
     steel_output_desired: float
+    #hydrogen_gas_input: float 
+
     metallization_rate: float = 0.94
     mol_weight_h2: float = 2.01588
     mol_weight_h2o: float = 18.0153
@@ -42,6 +57,7 @@ class MassModelConfig:
     al2o3_percent: float = 0.02
     h2_per_mol: float = 3 / 2
     lambda_h2: float = 1.2
+    
 @define
 class MassModelOutputs:
     """Outputs from the HDRI mass model.
@@ -82,51 +98,119 @@ def mass_model(config: MassModelConfig) -> MassModelOutputs:
         Journal of Cleaner Production 350: 131339. doi: https://doi.org/10.1016/j.jclepro.2022.131339.
     """
 
+    if config.steel_output_desired:
+        fe_o_ratio = (
+            2 * (config.mol_weight_fe)
+        ) / config.mol_weight_fe2o3  # Ratio of Fe weight to Fe2O3 weight
 
-    fe_o_ratio = (
-        2 * (config.mol_weight_fe)
-    ) / config.mol_weight_fe2o3  # Ratio of Fe weight to Fe2O3 weight
+        m1 = config.steel_output_desired / (
+            config.fe2o3_pure * fe_o_ratio * config.metallization_rate
+        )  # kg Fe2O3 amount of raw material needed for desired steel output
+        m2_feo = (
+            m1 * config.fe2o3_pure * fe_o_ratio * (1 - config.metallization_rate)
+        )  # kg Fe2O3 amount of iron(III) oxide not reduced
 
-    m1 = config.steel_output_desired / (
-        config.fe2o3_pure * fe_o_ratio * config.metallization_rate
-    )  # kg Fe2O3 amount of raw material needed for desired steel output
-    m2_feo = (
-        m1 * config.fe2o3_pure * fe_o_ratio * (1 - config.metallization_rate)
-    )  # kg Fe2O3 amount of iron(III) oxide not reduced
+        sio2_percent = config.sio2_percent  # Percent SiO2 in raw materials
+        al2o3_percent = config.al2o3_percent  # Percent Al2O3 in raw materials
 
-    sio2_percent = config.sio2_percent  # Percent SiO2 in raw materials
-    al2o3_percent = config.al2o3_percent  # Percent Al2O3 in raw materials
+        m1_sio2 = sio2_percent * m1  # kg SiO2 mass of SiO2 in raw materials
+        m1_al2o3 = al2o3_percent * m1  # kg Al2O3 mass of Al2O3 in raw materials
 
-    m1_sio2 = sio2_percent * m1  # kg SiO2 mass of SiO2 in raw materials
-    m1_al2o3 = al2o3_percent * m1  # kg Al2O3 mass of Al2O3 in raw materials
+        m2_fe = (
+            m1 - (m1_sio2 + m1_al2o3 + m2_feo)
+        ) * fe_o_ratio  # kg Fe mass of metallic iron out of DRI per tonne steel
 
-    m2_fe = (
-        m1 - (m1_sio2 + m1_al2o3 + m2_feo)
-    ) * fe_o_ratio  # kg Fe mass of metallic iron out of DRI per tonne steel
+        h2_weight_per_mol = config.h2_per_mol * config.mol_weight_h2  # g H2 per 1 mol Fe
+        mol_per_input_fe = (
+            config.steel_output_desired * 1000
+        ) / config.mol_weight_fe  # mols of iron in the input kg of Fe
+        
+        m4_stoich = (
+            h2_weight_per_mol * mol_per_input_fe
+        ) / 1000  # kg H2 minimum mass needed per tonne steel
 
-    h2_weight_per_mol = config.h2_per_mol * config.mol_weight_h2  # g H2 per 1 mol Fe
-    mol_per_input_fe = (
-        config.steel_output_desired * 1000
-    ) / config.mol_weight_fe  # mols of iron in the input kg of Fe
-    
-    m4_stoich = (
-        h2_weight_per_mol * mol_per_input_fe
-    ) / 1000  # kg H2 minimum mass needed per tonne steel
+        m4 = (
+            m4_stoich * config.lambda_h2
+        )  # kg H2 mass of hydrogen inputted into DRI per tonne steel
 
-    m4 = (
-        m4_stoich * config.lambda_h2
-    )  # kg H2 mass of hydrogen inputted into DRI per tonne steel
+        water_mass = (
+            (3 * config.mol_weight_h2o) / (2 * config.mol_weight_fe)
+        ) * config.steel_output_desired  # water produced per tonne liquid steel
 
-    water_mass = (
-        (3 * config.mol_weight_h2o) / (2 * config.mol_weight_fe)
-    ) * config.steel_output_desired  # water produced per tonne liquid steel
+        m5_h2 = m4_stoich * (
+            config.lambda_h2 - 1
+        )  # mass of hydrogen remaining in exhaust after DRI in kg
+        m5_h2o = water_mass  # mass of water produced in DRI in kg
+        m5 = m5_h2 + m5_h2o  # total mass of exhaust in kg
 
-    m5_h2 = m4_stoich * (
-        config.lambda_h2 - 1
-    )  # mass of hydrogen remaining in exhaust after DRI in kg
-    m5_h2o = water_mass  # mass of water produced in DRI in kg
-    m5 = m5_h2 + m5_h2o  # total mass of exhaust in kg
+    if config.hydrogen_gas_needed: 
+        m4 = hydrogen_gas_needed
+            #1
+        fe_o_ratio = (2 * (config.mol_weight_fe)) / config.mol_weight_fe2o3  
+            # Ratio of Fe weight to Fe2O3 weight
 
+            #2
+        sio2_percent = config.sio2_percent  
+            # Percent SiO2 in raw materials
+
+            #3        
+        al2o3_percent = config.al2o3_percent  
+            # Percent Al2O3 in raw materials
+
+            #4
+        h2_weight_per_mol = config.h2_per_mol * config.mol_weight_h2  
+            # g H2 per 1 mol Fe
+
+            #5
+        m4_stoich = (m4 / config.lambda_h2)  
+            # kg H2 mass of hydrogen inputted into DRI per tonne steel
+
+            #6
+        m5_h2 = m4_stoich * (config.lambda_h2 - 1)  
+            # mass of hydrogen remaining in exhaust after DRI in kg
+
+            #7
+        m5_h2o = water_mass  
+            # mass of water produced in DRI in kg
+
+            #8
+        steel_output_desired   = ((3 * config.mol_weight_h2o) / (2 * config.mol_weight_fe)) / water_mass 
+            # water produced per tonne liquid steel
+
+            #9
+        mol_per_input_fe = (steel_output_desired * 1000) / config.mol_weight_fe  
+            # mols of iron in the input kg of Fe
+
+            #10
+        h2_weight_per_mo = (m4_stoich * 1000) / mol_per_input_fe 
+            # kg H2 minimum mass needed per tonne steel
+
+            #11
+        m1 = steel_output_desired / (config.fe2o3_pure * fe_o_ratio * config.metallization_rate)  
+            # kg Fe2O3 amount of raw material needed for desired steel output
+
+            #12       
+        m2_feo = (m1 * config.fe2o3_pure * fe_o_ratio * (1 - config.metallization_rate))  
+            # kg Fe2O3 amount of iron(III) oxide not reduced
+
+            #13
+        m1_sio2 = sio2_percent * m1  
+            # kg SiO2 mass of SiO2 in raw materials
+
+            #14
+        m1_al2o3 = al2o3_percent * m1  
+            # kg Al2O3 mass of Al2O3 in raw materials
+
+            #15
+        m2_fe = (m1 - (m1_sio2 + m1_al2o3 + m2_feo)) * fe_o_ratio  
+            # kg Fe mass of metallic iron out of DRI per tonne steel
+
+            #16
+        m5 = m5_h2 + m5_h2o  
+            # total mass of exhaust in kg
+            
+            
+            
     return MassModelOutputs(
         iron_ore_mass_needed=m1,
         hydrogen_gas_needed=m4,
@@ -954,8 +1038,11 @@ if __name__ == "__main__":
 
     model_instance = hdri_model()
 
-    steel_output_desired = 1000  # (kg or kg/hr)
+    
 
+    steel_output_desired = 1000  # (kg or kg/hr)
+    steel_prod_yr = 2000000 #kg/year also means it would only run for 2000 hours a year 
+    hydrogen_gas_needed = 64 #kg/hr
 
     #mass_outputs = model_instance.mass_model(steel_output_desired)
     
@@ -963,16 +1050,14 @@ if __name__ == "__main__":
     #recuperator_outputs = model_instance.recuperator_mass_energy_model(steel_output_desired)
     #heater_outputs = model_instance.heater_mass_energy_model(steel_output_desired)
 
-    
-    steel_prod_yr=2000000
 
     financial_outputs = model_instance.financial_model(steel_prod_yr)
-    print()
-    print(financial_outputs)
+    #print()
+    #print(financial_outputs)
 
     config = MassModelConfig(steel_output_desired)
     out = mass_model(config)
-    print()
+    #print()
     print(out)
 
     config1 = EnergyModelConfig(config)

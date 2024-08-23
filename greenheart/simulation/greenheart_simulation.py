@@ -821,31 +821,37 @@ def run_simulation(config: GreenHeartSimulationConfig):
         ]
 
         if "steel" in config.greenheart_config:
-            steel_config = copy.deepcopy(config.greenheart_config)
-            if config.verbose:
-                print("Running steel\n")
+            if "nonlinear" in config.greenheart_config["steel"]["model"]:
+                pass
+            else:
 
-            # use lcoh from the electrolyzer model if it is not already in the config
-            if "lcoh" not in steel_config["steel"]["finances"]:
-                steel_config["steel"]["finances"]["lcoh"] = lcoh
+                steel_config = copy.deepcopy(config.greenheart_config)
+                if config.verbose:
+                    print("Running steel\n")
 
-            # use lcoh from the electrolyzer model if it is not already in the config
-            if "lcoh" not in steel_config["steel"]["costs"]:
-                steel_config["steel"]["costs"]["lcoh"] = lcoh
+                # use lcoh from the electrolyzer model if it is not already in the config
+                if "lcoh" not in steel_config["steel"]["finances"]:
+                    steel_config["steel"]["finances"]["lcoh"] = lcoh
 
-            # use the hydrogen amount from the electrolyzer physics model if it is not already in the config
-            if (
-                "hydrogen_amount_kgpy"
-                not in steel_config["steel"]["capacity"]
-            ):
-                steel_config["steel"]["capacity"][
+                # use lcoh from the electrolyzer model if it is not already in the config
+                if "lcoh" not in steel_config["steel"]["costs"]:
+                    steel_config["steel"]["costs"]["lcoh"] = lcoh
+
+                # use the hydrogen amount from the electrolyzer physics model if it is not already in the config
+                if (
                     "hydrogen_amount_kgpy"
-                ] = hydrogen_amount_kgpy
+                    not in steel_config["steel"]["capacity"]
+                ):
+                    steel_config["steel"]["capacity"][
+                        "hydrogen_amount_kgpy"
+                    ] = hydrogen_amount_kgpy
+                
 
-            steel_capacity, steel_costs, steel_finance = run_steel_full_model(steel_config, save_plots=config.save_plots, show_plots=config.show_plots, output_dir=config.output_dir, design_scenario_id=config.design_scenario["id"])
+                steel_capacity, steel_costs, steel_finance = run_steel_full_model(steel_config, save_plots=config.save_plots, show_plots=config.show_plots, output_dir=config.output_dir, design_scenario_id=config.design_scenario["id"])
 
         else:
             steel_finance = {}
+        
 
         if "ammonia" in config.greenheart_config:
             ammonia_config = copy.deepcopy(config.greenheart_config)
